@@ -6,13 +6,43 @@
     <title>113年南投縣英語文競賽抽籤系統</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <!-- 加入中文字型 -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+        }
+        
+        /* 專門用於 PDF 輸出的表格樣式 */
+        .pdf-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        .pdf-table th {
+            background-color: #1e3a8a;
+            color: white;
+            padding: 8px;
+            border: 1px solid #ddd;
+        }
+        .pdf-table td {
+            padding: 8px;
+            border: 1px solid #ddd;
+            text-align: center;
+        }
+        
+        /* 隱藏用於打印的元素 */
+        .pdf-container {
+            display: none;
+        }
+    </style>
 </head>
 <body class="bg-blue-50 min-h-screen">
     <!-- 頁首 -->
     <header class="bg-blue-900 text-white py-6 px-4 shadow-lg">
         <div class="container mx-auto">
-            <h1 class="text-2xl md:text-4xl font-bold text-center mb-4">
+            <h1 id="mainTitle" class="text-2xl md:text-4xl font-bold text-center mb-4">
                 113年南投縣英語文競賽抽籤系統
             </h1>
             <div class="text-center space-y-2">
@@ -50,14 +80,9 @@
 
             <!-- 表格容器 -->
             <div class="overflow-x-auto">
-                <table id="dataTable" class="min-w-full bg-white">
+                <table id="dataTable" class="min-w-full bg-white table-fixed">
                     <thead>
                         <tr class="bg-blue-900 text-white">
-                            <th class="py-3 px-4 text-left">編號</th>
-                            <th class="py-3 px-4 text-left">姓名</th>
-                            <th class="py-3 px-4 text-left">學校</th>
-                            <th class="py-3 px-4 text-left">亂數值</th>
-                            <th class="py-3 px-4 text-left">上台序號</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-200"></tbody>
@@ -65,11 +90,21 @@
             </div>
         </div>
     </main>
-
+    <div id="pdfContainer" class="pdf-container">
+        <h1 style="text-align: center; font-size: 24px; margin: 20px 0;"></h1>
+        <table class="pdf-table">
+            <thead>
+                <tr></tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
     <script>
         let currentData = [];
+        let titleText = "";
+        let headers = [];
+        let allHeaders = []; // 新增：儲存所有欄位，包括亂數值和上台序號
 
-        // 事件監聽器
         document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('fileInput').addEventListener('change', handleFileSelect);
             document.getElementById('randomSort').addEventListener('click', randomSort);
@@ -79,7 +114,6 @@
             document.getElementById('exportPdf').addEventListener('click', exportPdf);
         });
 
-        // 處理檔案選擇
         function handleFileSelect(event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -89,9 +123,36 @@
                 try {
                     const data = new Uint8Array(e.target.result);
                     const workbook = XLSX.read(data, {type: 'array'});
-                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-                    currentData = XLSX.utils.sheet_to_json(firstSheet);
-                    updateTable(currentData);
+                    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                    
+                    const range = XLSX.utils.decode_range(worksheet['!ref']);
+                    titleText = worksheet[XLSX.utils.encode_cell({r: 0, c: 0})].v;
+                    document.getElementById('mainTitle').textContent = titleText;
+
+                    headers = [];
+                    for(let C = range.s.c; C <= range.e.c; C++) {
+                        const headerCell = worksheet[XLSX.utils.encode_cell({r: 1, c: C})];
+                        if(headerCell) headers.push(headerCell.v);
+                    }
+                    
+                    // 新增：確保亂數值和上台序號欄位存在於headers中
+                    if (!headers.includes('亂數值')) headers.push('亂數值');
+                    if (!headers.includes('上台序號')) headers.push('上台序號');
+                    allHeaders = [...headers]; // 儲存所有欄位
+
+                    currentData = [];
+                    for(let R = 2; R <= range.e.r; R++) {
+                        let row = {};
+                        for(let C = 0; C <= range.e.c; C++) {
+                            const cell = worksheet[XLSX.utils.encode_cell({r: R, c: C})];
+                            if(cell) row[headers[C]] = cell.v;
+                        }
+                        row['亂數值'] = '';
+                        row['上台序號'] = '';
+                        currentData.push(row);
+                    }
+
+                    updateTable();
                     enableButtons();
                 } catch (error) {
                     alert('檔案讀取錯誤：' + error.message);
@@ -100,55 +161,51 @@
             reader.readAsArrayBuffer(file);
         }
 
-        // 更新表格
-        function updateTable(data) {
+        function updateTable() {
+            const thead = document.querySelector('#dataTable thead tr');
+            thead.innerHTML = allHeaders.map(header => 
+                `<th class="py-3 px-4 text-left whitespace-nowrap" style="max-width: 150px; overflow: hidden; text-overflow: ellipsis;">${header}</th>`
+            ).join('');
+
             const tbody = document.querySelector('#dataTable tbody');
             tbody.innerHTML = '';
 
-            data.forEach(row => {
+            currentData.forEach(row => {
                 const tr = document.createElement('tr');
                 tr.className = 'hover:bg-gray-50';
-                tr.innerHTML = `
-                    <td class="py-2 px-4">${row.編號 || ''}</td>
-                    <td class="py-2 px-4">${row.姓名 || ''}</td>
-                    <td class="py-2 px-4">${row.學校 || ''}</td>
-                    <td class="py-2 px-4">${row.亂數值 || ''}</td>
-                    <td class="py-2 px-4">${row.上台序號 || ''}</td>
-                `;
+                tr.innerHTML = allHeaders.map(header => 
+                    `<td class="py-2 px-4 whitespace-nowrap" style="max-width: 150px; overflow: hidden; text-overflow: ellipsis;">${row[header] || ''}</td>`
+                ).join('');
                 tbody.appendChild(tr);
             });
         }
 
-        // 亂數排序
         function randomSort() {
             currentData = currentData.map(row => ({
                 ...row,
-                亂數值: Math.floor(Math.random() * 100000000)
+                '亂數值': Math.floor(Math.random() * 100000000)
             }));
 
-            currentData.sort((a, b) => b.亂數值 - a.亂數值);
+            currentData.sort((a, b) => b['亂數值'] - a['亂數值']);
             
             currentData.forEach((row, index) => {
-                row.上台序號 = index + 1;
+                row['上台序號'] = index + 1;
             });
 
-            updateTable(currentData);
+            updateTable();
             document.getElementById('orderSort').disabled = false;
         }
 
-        // 依上台序號排序
         function sortByOrder() {
-            currentData.sort((a, b) => a.上台序號 - b.上台序號);
-            updateTable(currentData);
+            currentData.sort((a, b) => a['上台序號'] - b['上台序號']);
+            updateTable();
         }
 
-        // 依編號排序
         function sortByNumber() {
-            currentData.sort((a, b) => a.編號 - b.編號);
-            updateTable(currentData);
+            currentData.sort((a, b) => a['編號'] - b['編號']);
+            updateTable();
         }
 
-        // 啟用按鈕
         function enableButtons() {
             document.getElementById('randomSort').disabled = false;
             document.getElementById('numberSort').disabled = false;
@@ -156,22 +213,111 @@
             document.getElementById('exportPdf').disabled = false;
         }
 
-        // 匯出Excel
-        function exportExcel() {
+// Excel 輸出函數
+function exportExcel() {
+    try {
+        // 創建工作表數據，第一行為標題
+        const wsData = [
+            [titleText], // 第一行為原始檔案標題
+            allHeaders, // 第二行為欄位標題
+            ...currentData.map(row => allHeaders.map(header => row[header] || '')) // 資料行
+        ];
+
+        // 創建工作表
+        const ws = XLSX.utils.aoa_to_sheet(wsData);
+        
+        // 合併第一行的儲存格
+        ws['!merges'] = [
+            { s: { r: 0, c: 0 }, e: { r: 0, c: allHeaders.length - 1 } }
+        ];
+
+        // 設定標題列的樣式（置中對齊）
+        ws['A1'].s = {
+            alignment: {
+                horizontal: 'center',
+                vertical: 'center'
+            },
+            font: {
+                bold: true,
+                sz: 14
+            }
+        };
+
+        // 創建工作簿並加入工作表
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "抽籤結果");
+
+        // 使用原始檔案標題作為檔名
+        const fileName = `${titleText}抽籤.xlsx`;
+        
+        // 導出Excel檔案
+        XLSX.writeFile(wb, fileName);
+    } catch (error) {
+        alert('匯出Excel錯誤：' + error.message);
+    }
+}
+
+        // 修改 PDF 輸出函數
+        async function exportPdf() {
             try {
-                const ws = XLSX.utils.json_to_sheet(currentData);
-                const wb = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(wb, ws, "抽籤結果");
-                XLSX.writeFile(wb, "抽籤結果.xlsx");
+                // 準備 PDF 內容
+                const pdfContainer = document.getElementById('pdfContainer');
+                const pdfTitle = pdfContainer.querySelector('h1');
+                const pdfTable = pdfContainer.querySelector('table');
+                
+                // 設置標題
+                pdfTitle.textContent = titleText;
+                
+                // 設置表格標題
+                const pdfThead = pdfTable.querySelector('thead tr');
+                pdfThead.innerHTML = allHeaders.map(header => 
+                    `<th>${header}</th>`
+                ).join('');
+                
+                // 設置表格內容
+                const pdfTbody = pdfTable.querySelector('tbody');
+                pdfTbody.innerHTML = currentData.map(row => `
+                    <tr>
+                        ${allHeaders.map(header => `
+                            <td>${row[header] || ''}</td>
+                        `).join('')}
+                    </tr>
+                `).join('');
+                
+                // 顯示容器以便生成 PDF
+                pdfContainer.style.display = 'block';
+                
+                // 配置 PDF 選項
+                const opt = {
+                    margin: 10,
+                    filename: `${titleText}抽籤.pdf`,
+                    image: { type: 'jpeg', quality: 0.98 },
+                    html2canvas: { 
+                        scale: 2,
+                        logging: false,
+                        useCORS: true
+                    },
+                    jsPDF: { 
+                        unit: 'mm', 
+                        format: 'a4', 
+                        orientation: 'landscape'
+                    }
+                };
+                
+                // 生成 PDF
+                await html2pdf().set(opt).from(pdfContainer).save();
+                
+                // 隱藏容器
+                pdfContainer.style.display = 'none';
             } catch (error) {
-                alert('匯出Excel錯誤：' + error.message);
+                alert('匯出PDF錯誤：' + error.message);
+                console.error('PDF錯誤：', error);
+                // 確保容器被隱藏
+                document.getElementById('pdfContainer').style.display = 'none';
             }
         }
 
-        // 匯出PDF
-        function exportPdf() {
-            alert('PDF匯出功能開發中');
-        }
+
     </script>
 </body>
 </html>
