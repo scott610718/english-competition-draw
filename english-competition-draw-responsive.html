@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>113年南投縣英語文競賽抽籤系統</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body class="bg-blue-50 min-h-screen">
+    <!-- 頁首 -->
+    <header class="bg-blue-900 text-white py-6 px-4 shadow-lg">
+        <div class="container mx-auto">
+            <h1 class="text-2xl md:text-4xl font-bold text-center mb-4">
+                113年南投縣英語文競賽抽籤系統
+            </h1>
+            <div class="text-center space-y-2">
+                <h2 class="text-lg md:text-2xl">南投縣政府教育處指導</h2>
+                <h2 class="text-lg md:text-2xl">營北國中製作</h2>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主要內容 -->
+    <main class="container mx-auto px-4 py-8">
+        <div class="bg-white rounded-lg shadow-lg p-6">
+            <!-- 按鈕區 -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+                <label for="fileInput" class="bg-blue-600 text-white py-2 px-4 rounded cursor-pointer text-center hover:bg-blue-700 transition-colors">
+                    選擇Excel檔案
+                    <input type="file" id="fileInput" accept=".xlsx, .xls" class="hidden" />
+                </label>
+                <button id="randomSort" class="bg-blue-600 text-white py-2 px-4 rounded disabled:bg-gray-400 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors" disabled>
+                    開始亂數排序
+                </button>
+                <button id="orderSort" class="bg-blue-600 text-white py-2 px-4 rounded disabled:bg-gray-400 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors" disabled>
+                    按上台序號排序
+                </button>
+                <button id="numberSort" class="bg-blue-600 text-white py-2 px-4 rounded disabled:bg-gray-400 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors" disabled>
+                    按編號排序
+                </button>
+                <button id="exportExcel" class="bg-green-600 text-white py-2 px-4 rounded disabled:bg-gray-400 disabled:cursor-not-allowed hover:bg-green-700 transition-colors" disabled>
+                    輸出Excel
+                </button>
+                <button id="exportPdf" class="bg-green-600 text-white py-2 px-4 rounded disabled:bg-gray-400 disabled:cursor-not-allowed hover:bg-green-700 transition-colors" disabled>
+                    輸出PDF
+                </button>
+            </div>
+
+            <!-- 表格容器 -->
+            <div class="overflow-x-auto">
+                <table id="dataTable" class="min-w-full bg-white">
+                    <thead>
+                        <tr class="bg-blue-900 text-white">
+                            <th class="py-3 px-4 text-left">編號</th>
+                            <th class="py-3 px-4 text-left">姓名</th>
+                            <th class="py-3 px-4 text-left">學校</th>
+                            <th class="py-3 px-4 text-left">亂數值</th>
+                            <th class="py-3 px-4 text-left">上台序號</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200"></tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let currentData = [];
+
+        // 事件監聽器
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('fileInput').addEventListener('change', handleFileSelect);
+            document.getElementById('randomSort').addEventListener('click', randomSort);
+            document.getElementById('orderSort').addEventListener('click', sortByOrder);
+            document.getElementById('numberSort').addEventListener('click', sortByNumber);
+            document.getElementById('exportExcel').addEventListener('click', exportExcel);
+            document.getElementById('exportPdf').addEventListener('click', exportPdf);
+        });
+
+        // 處理檔案選擇
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, {type: 'array'});
+                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                    currentData = XLSX.utils.sheet_to_json(firstSheet);
+                    updateTable(currentData);
+                    enableButtons();
+                } catch (error) {
+                    alert('檔案讀取錯誤：' + error.message);
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // 更新表格
+        function updateTable(data) {
+            const tbody = document.querySelector('#dataTable tbody');
+            tbody.innerHTML = '';
+
+            data.forEach(row => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-gray-50';
+                tr.innerHTML = `
+                    <td class="py-2 px-4">${row.編號 || ''}</td>
+                    <td class="py-2 px-4">${row.姓名 || ''}</td>
+                    <td class="py-2 px-4">${row.學校 || ''}</td>
+                    <td class="py-2 px-4">${row.亂數值 || ''}</td>
+                    <td class="py-2 px-4">${row.上台序號 || ''}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // 亂數排序
+        function randomSort() {
+            currentData = currentData.map(row => ({
+                ...row,
+                亂數值: Math.floor(Math.random() * 100000000)
+            }));
+
+            currentData.sort((a, b) => b.亂數值 - a.亂數值);
+            
+            currentData.forEach((row, index) => {
+                row.上台序號 = index + 1;
+            });
+
+            updateTable(currentData);
+            document.getElementById('orderSort').disabled = false;
+        }
+
+        // 依上台序號排序
+        function sortByOrder() {
+            currentData.sort((a, b) => a.上台序號 - b.上台序號);
+            updateTable(currentData);
+        }
+
+        // 依編號排序
+        function sortByNumber() {
+            currentData.sort((a, b) => a.編號 - b.編號);
+            updateTable(currentData);
+        }
+
+        // 啟用按鈕
+        function enableButtons() {
+            document.getElementById('randomSort').disabled = false;
+            document.getElementById('numberSort').disabled = false;
+            document.getElementById('exportExcel').disabled = false;
+            document.getElementById('exportPdf').disabled = false;
+        }
+
+        // 匯出Excel
+        function exportExcel() {
+            try {
+                const ws = XLSX.utils.json_to_sheet(currentData);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "抽籤結果");
+                XLSX.writeFile(wb, "抽籤結果.xlsx");
+            } catch (error) {
+                alert('匯出Excel錯誤：' + error.message);
+            }
+        }
+
+        // 匯出PDF
+        function exportPdf() {
+            alert('PDF匯出功能開發中');
+        }
+    </script>
+</body>
+</html>
